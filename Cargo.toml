@@ -1,0 +1,23 @@
+[package]
+name = "esp-p4-bootloader"
+version = "0.1.0"
+edition = "2021"
+description = "ESP32-P4 hardware bring-up: BOD/WDT/PMU/MPLL/PVT/MSPI/cache/MMU init. Drop-in replacement for the chip-init portion of an IDF 2nd-stage bootloader, in pure Rust, for `--ram --no-stub` boot or as the chip-init module of a custom 1st-stage bootloader."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/babasha/esp-p4-bootloader"
+readme = "README.md"
+keywords = ["esp32p4", "espressif", "no-std", "embedded", "bootloader"]
+categories = ["embedded", "hardware-support", "no-std"]
+
+[lib]
+# Keep the in-code path `use bootloader::…` while the crate publishes
+# under the namespaced `esp-p4-bootloader`. Downstream crates rename via
+# `bootloader = { package = "esp-p4-bootloader", … }` in their deps.
+name = "bootloader"
+path = "src/lib.rs"
+
+[features]
+default = []
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+esp32p4 = { version = "0.2", features = ["rt"] }
