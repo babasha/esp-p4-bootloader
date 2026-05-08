@@ -14,6 +14,7 @@
 //! `hpcore0`. The 6-bit cause code follows the table in the PAC
 //! docstring; see [`Cause`] for the named variants.
 
+#[cfg(target_arch = "riscv32")]
 use esp32p4 as pac;
 
 /// Decoded `hpcore0` reset cause. The raw 6-bit field stays accessible
@@ -131,9 +132,64 @@ impl Cause {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::Cause;
+
+    /// `from_raw(c.raw())` must round-trip every known variant.
+    /// Catches drift if someone edits one of the two tables and
+    /// forgets the other.
+    #[test]
+    fn raw_round_trip() {
+        let known = [
+            Cause::PowerOn,
+            Cause::DigitalSystemSoftware,
+            Cause::PmuHpSystemPowerDown,
+            Cause::HpWatchdogSystem,
+            Cause::LpWatchdogSystem,
+            Cause::HpWatchdogCore,
+            Cause::HpCoreSoftware,
+            Cause::LpWatchdogCore,
+            Cause::BrownOut,
+            Cause::LpWatchdogChip,
+            Cause::SuperWatchdog,
+            Cause::Glitch,
+            Cause::EfuseCrc,
+            Cause::UsbJtagChip,
+            Cause::UsbUartChip,
+            Cause::HpJtag,
+            Cause::HpCoreLockup,
+        ];
+        for c in known {
+            assert_eq!(Cause::from_raw(c.raw()), c, "round-trip failed for {:?}", c);
+        }
+    }
+
+    /// Unknown raw values surface as `Cause::Unknown(raw)` and round-trip.
+    #[test]
+    fn unknown_round_trip() {
+        for raw in [0x00u8, 0x02, 0x06, 0x1F, 0x3F] {
+            let c = Cause::from_raw(raw);
+            assert_eq!(c, Cause::Unknown(raw));
+            assert_eq!(c.raw(), raw);
+        }
+    }
+
+    #[test]
+    fn watchdog_classifier() {
+        assert!(Cause::HpWatchdogSystem.is_watchdog());
+        assert!(Cause::LpWatchdogChip.is_watchdog());
+        assert!(Cause::SuperWatchdog.is_watchdog());
+        assert!(!Cause::PowerOn.is_watchdog());
+        assert!(!Cause::BrownOut.is_watchdog());
+        assert!(!Cause::Unknown(0xFF).is_watchdog());
+    }
+}
+
 /// Read the latched `hpcore0` reset cause. Single-hart, sticky
 /// register — safe to call at any point during boot. Does **not**
 /// clear the latch.
+#[cfg(target_arch = "riscv32")]
 pub fn read_hpcore0() -> Cause {
     // SAFETY: PAC peripheral pointers are static; the read is from a
     // sticky LP-AON register that no other code in our stack touches.

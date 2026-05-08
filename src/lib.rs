@@ -31,6 +31,9 @@ pub mod pin_mux;
 pub mod mmu;
 
 #[cfg(target_arch = "riscv32")]
+mod uart_log;
+
+#[cfg(target_arch = "riscv32")]
 pub mod bod;
 #[cfg(target_arch = "riscv32")]
 pub mod mpll;
@@ -43,7 +46,7 @@ pub mod pmu;
 #[cfg(target_arch = "riscv32")]
 pub mod clkrst;
 pub mod wdt;
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 pub mod reset_cause;
 
 /// Phase-1 hardware bring-up — minimum to keep the chip alive: BOD off,
@@ -85,6 +88,13 @@ pub fn init() {
 ///
 /// **Post-condition:** chip is ready for `psram::init()` (or any other
 /// analog peripheral driver) to take over.
+///
+/// **Idempotency:** every step uses register read-modify-write (PMU
+/// templates, OR-in clock gates, REGI2C set_field) so a repeat call
+/// after warm reset is safe — it just re-asserts the same configured
+/// state. The only observable cost is `mpll::bringup_400` re-running
+/// MPLL self-calibration (~1 ms). Don't rely on this for hot-paths;
+/// the function is expected to be called once per boot.
 #[cfg(target_arch = "riscv32")]
 pub fn init_phase2_full() {
     bod::disable();

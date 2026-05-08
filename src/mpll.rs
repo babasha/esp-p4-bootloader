@@ -16,6 +16,7 @@ use crate::regi2c::{
     I2C_MPLL_IR_CAL_RSTB_ADDR, I2C_MPLL_IR_CAL_RSTB_LSB, REGI2C_BIAS_BLOCK,
     REGI2C_BIAS_MST_SEL, REGI2C_MSPI_XTAL_MST_SEL,
 };
+use crate::uart_log::uart_str;
 
 /// PAC handle for `HP_SYS_CLKRST`.
 #[inline(always)]
@@ -119,14 +120,16 @@ pub unsafe fn bringup_400() {
     let val: u8 = (div << 3) | ref_div;
     regi2c::write_byte(I2C_MPLL_DIV_REG_ADDR, val);
 
-    // 6. Wait calibration done.
+    // 6. Wait calibration done. If the done bit never flips (chip
+    //    rev / silicon erratum), continue anyway — calibration may
+    //    already be effective. Surfacing it on UART makes the symptom
+    //    visible if a downstream peripheral later misbehaves.
     let mut spins: u32 = 0;
     while !calibration_done() {
         core::hint::spin_loop();
         spins += 1;
         if spins > 1_000_000 {
-            // Don't hang the boot — log and continue. Calibration may
-            // already be effective even if the done bit didn't flip.
+            uart_str("mpll: calibration timeout, continuing\r\n");
             break;
         }
     }

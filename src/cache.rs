@@ -93,6 +93,8 @@ pub fn hal_init() {
 /// 5-10 ms POR into a stable boot.
 pub fn init_l2_cache_mode() {
     // SAFETY: ROM addresses are fixed in P4 ROM. Single-hart at boot.
+    // IDF `cache_hal_init` likewise discards the `Cache_Invalidate_All`
+    // return value.
     unsafe {
         let set_mode: RomCacheSetL2Mode =
             core::mem::transmute(ROM_CACHE_SET_L2_CACHE_MODE);

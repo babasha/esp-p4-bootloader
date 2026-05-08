@@ -23,6 +23,8 @@
 
 use core::ptr;
 
+use crate::uart_log::{uart_hex32, uart_str};
+
 /// `LP_ANA` base from `esp32p4` PAC (`0x5011_3000`).
 const LP_ANA_BASE: usize = 0x5011_3000;
 
@@ -85,41 +87,4 @@ pub fn disable() {
     }
 
     uart_str("bod: disable done\r\n");
-}
-
-// Internal UART0 raw FIFO writer with backpressure. Without the FIFO
-// count check the helpers overrun the 128-byte hardware FIFO (~11 ms at
-// 115200 baud) and bytes are silently dropped — making the boot log look
-// truncated even when the chip is healthy.
-const UART0_FIFO: *mut u32 = 0x500C_A000 as *mut u32;
-const UART0_STATUS: *const u32 = 0x500C_A01C as *const u32;
-const TXFIFO_CNT_SHIFT: u32 = 16;
-const TXFIFO_CNT_MASK: u32 = 0xFF << TXFIFO_CNT_SHIFT;
-const TXFIFO_CAPACITY: u32 = 128;
-
-#[inline(always)]
-fn txfifo_count() -> u32 {
-    (unsafe { ptr::read_volatile(UART0_STATUS) } & TXFIFO_CNT_MASK) >> TXFIFO_CNT_SHIFT
-}
-
-fn uart_byte(b: u8) {
-    while txfifo_count() >= TXFIFO_CAPACITY {
-        core::hint::spin_loop();
-    }
-    unsafe { ptr::write_volatile(UART0_FIFO, b as u32) };
-}
-
-fn uart_str(s: &str) {
-    for &b in s.as_bytes() {
-        uart_byte(b);
-    }
-}
-
-fn uart_hex32(prefix: &str, v: u32) {
-    uart_str(prefix);
-    let hex = b"0123456789ABCDEF";
-    for i in 0..8 {
-        uart_byte(hex[((v >> ((7 - i) * 4)) & 0xF) as usize]);
-    }
-    uart_str("\r\n");
 }

@@ -16,8 +16,5 @@ categories = ["embedded", "hardware-support", "no-std"]
 name = "bootloader"
 path = "src/lib.rs"
 
-[features]
-default = []
-
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 esp32p4 = { version = "0.2", features = ["rt"] }

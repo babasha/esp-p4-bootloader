@@ -17,30 +17,13 @@
 #[cfg(target_arch = "riscv32")]
 use esp32p4 as pac;
 
+#[cfg(target_arch = "riscv32")]
+use crate::uart_log::{uart_hex32, uart_str};
+
 /// IDF `RTC_CNTL_WDT_WKEY` / `TIMG_WDT_WKEY` value. Same magic for all three
 /// watchdogs on ESP32-P4 (see `soc/lp_wdt_reg.h`, `soc/timer_group_reg.h`).
+#[cfg(target_arch = "riscv32")]
 const WDT_KEY: u32 = 0x50D83AA1;
-
-#[cfg(target_arch = "riscv32")]
-fn uart_str(s: &str) {
-    const UART0_FIFO: *mut u32 = 0x500C_A000 as *mut u32;
-    for &b in s.as_bytes() {
-        unsafe { core::ptr::write_volatile(UART0_FIFO, b as u32) };
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-fn uart_hex32(prefix: &str, v: u32) {
-    uart_str(prefix);
-    let hex = b"0123456789ABCDEF";
-    const UART0_FIFO: *mut u32 = 0x500C_A000 as *mut u32;
-    for i in 0..8 {
-        unsafe {
-            core::ptr::write_volatile(UART0_FIFO, hex[((v >> ((7 - i) * 4)) & 0xF) as usize] as u32);
-        }
-    }
-    uart_str("\r\n");
-}
 
 #[cfg(target_arch = "riscv32")]
 pub fn disable_all() {

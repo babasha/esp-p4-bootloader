@@ -12,9 +12,11 @@ use core::ptr;
 /// `DR_REG_IOMUX_MSPI_PIN_BASE = HPPERIPH1 + 0x21200`.
 const IOMUX_MSPI_PIN_BASE: usize = 0x500E_1200;
 
-/// Per-pin offsets within `IOMUX_MSPI_PIN`. Each register is 32-bit; bits
-/// [13:12] hold the `_DRV` field for ordinary pins, [16:15] for DQS_0/DQS_1.
-const IOMUX_PSRAM_PIN_OFFSETS: [u32; 19] = [
+/// Per-pin offsets within `IOMUX_MSPI_PIN` for the 18 ordinary PSRAM
+/// pins. Each register is 32-bit; bits [13:12] hold the `_DRV` field.
+/// DQS_0 + DQS_1 are special-cased in [`IOMUX_PSRAM_DQS_OFFSETS`] (drv
+/// shift = 15 instead of 12).
+const IOMUX_PSRAM_PIN_OFFSETS: [u32; 18] = [
     0x1c, // PSRAM_D
     0x20, // PSRAM_Q
     0x24, // PSRAM_WP
@@ -33,8 +35,6 @@ const IOMUX_PSRAM_PIN_OFFSETS: [u32; 19] = [
     0x5c, // PSRAM_DQ13
     0x60, // PSRAM_DQ14
     0x64, // PSRAM_DQ15
-    // DQS_0 + DQS_1 are special-cased below (drv shift = 15 instead of 12).
-    0x00,
 ];
 
 /// DQS_0 / DQS_1 register offsets — DRV shift is 15 (not 12), and bit 0
@@ -67,7 +67,7 @@ pub fn pin_drv_set(drv: u8) {
     // SAFETY: each address is a fixed MMIO register; read-modify-write is
     // single-hart at boot before IRQs.
     unsafe {
-        for &off in &IOMUX_PSRAM_PIN_OFFSETS[..18] {
+        for &off in &IOMUX_PSRAM_PIN_OFFSETS {
             iomux_modify(off, normal_mask, normal_val);
         }
         for &off in &IOMUX_PSRAM_DQS_OFFSETS {
@@ -105,12 +105,10 @@ mod tests {
         assert_eq!(IOMUX_DRV_MASK << IOMUX_DRV_SHIFT_DQS, 0x0001_8000);
     }
 
-    /// 18 ordinary PSRAM pins + 2 DQS = 20 pins covered. Plus one
-    /// trailing zero-sentinel slot in `IOMUX_PSRAM_PIN_OFFSETS`.
+    /// 18 ordinary PSRAM pins + 2 DQS = 20 pins covered.
     #[test]
     fn pin_table_size() {
-        assert_eq!(IOMUX_PSRAM_PIN_OFFSETS.len(), 19);
-        assert_eq!(IOMUX_PSRAM_PIN_OFFSETS[18], 0x00); // sentinel
+        assert_eq!(IOMUX_PSRAM_PIN_OFFSETS.len(), 18);
         assert_eq!(IOMUX_PSRAM_DQS_OFFSETS.len(), 2);
     }
 }
