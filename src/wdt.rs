@@ -105,3 +105,123 @@ pub fn disable_all() {
 
 #[cfg(not(target_arch = "riscv32"))]
 pub fn disable_all() {}
+
+// ── TIMG1 single-stage system-reset watchdog ─────────────────────────────────
+//
+// The mini-bootloader arms TIMG1 as the "early WDT" right before jumping
+// to the app. The app must feed it (via [`feed_timg1`]) until either:
+//   - it transitions to its own watchdog setup, or
+//   - it calls [`disable_timg1`] entirely (e.g. once `mark_boot_succeeded`
+//     has run).
+//
+// If the app hangs without feeding for `timeout_ms`, stage 0 fires
+// `RESET_SYS` and the chip cold-resets through ROM → mini-bootloader →
+// otadata, where the existing `boot_attempts` counter takes over to
+// pick a different OTA slot after enough failed tries.
+
+#[cfg(target_arch = "riscv32")]
+const WDT_STG_ACTION_OFF: u8 = 0;
+#[cfg(target_arch = "riscv32")]
+const WDT_STG_ACTION_RESET_SYS: u8 = 3;
+
+/// Arm the TIMG1 main watchdog with a single-stage `RESET_SYS` action
+/// firing after `timeout_ms`. Clock source is XTAL (40 MHz on
+/// ESP32-P4) divided by 40 000 → 1 kHz tick → `timeout_ms` ms is
+/// exactly `timeout_ms` ticks.
+///
+/// Idempotent: re-arming overwrites the previous configuration. The
+/// returned-state is "stage 0 enabled, stages 1-3 off, counter
+/// reset to 0".
+///
+/// **Caller must take the WPROTECT/feed dance into account** — once
+/// armed, the WDT will reset the chip in `timeout_ms` unless either
+/// [`feed_timg1`] is called periodically or [`disable_timg1`] is
+/// called explicitly. There is no opt-out apart from those two paths.
+#[cfg(target_arch = "riscv32")]
+pub fn enable_timg1_reset(timeout_ms: u32) {
+    // SAFETY: peripheral pointer is static, single-hart at boot, before IRQs.
+    unsafe {
+        let t1 = &*pac::TIMG1::PTR;
+        t1.wdtwprotect().write(|w| w.bits(WDT_KEY));
+
+        // Configure all stages first while disabled, then flip wdt_en.
+        // This avoids a transient state where stage 0 fires before our
+        // chosen timeout because old wdtconfig2 still holds an earlier
+        // (potentially smaller) value.
+        t1.wdtconfig0().modify(|_, w| {
+            w.wdt_en()
+                .clear_bit()
+                .wdt_flashboot_mod_en()
+                .clear_bit()
+                .wdt_use_xtal()
+                .set_bit()
+                .wdt_conf_update_en()
+                .set_bit()
+                .wdt_stg0()
+                .bits(WDT_STG_ACTION_RESET_SYS)
+                .wdt_stg1()
+                .bits(WDT_STG_ACTION_OFF)
+                .wdt_stg2()
+                .bits(WDT_STG_ACTION_OFF)
+                .wdt_stg3()
+                .bits(WDT_STG_ACTION_OFF)
+        });
+
+        // 40 MHz XTAL / 40 000 = 1 kHz → 1 ms per tick.
+        t1.wdtconfig1()
+            .write(|w| w.wdt_clk_prescale().bits(40_000));
+        // Stage 0 timeout = timeout_ms ticks.
+        t1.wdtconfig2()
+            .write(|w| w.wdt_stg0_hold().bits(timeout_ms));
+
+        // Reset the counter and enable.
+        t1.wdtfeed().write(|w| w.wdt_feed().bits(1));
+        t1.wdtconfig0().modify(|_, w| w.wdt_en().set_bit());
+
+        t1.wdtwprotect().write(|w| w.bits(0));
+    }
+}
+
+/// Reset the TIMG1 WDT counter back to 0 — call this strictly more
+/// often than `timeout_ms / 2` to keep the device alive. Touching
+/// WPROTECT is required; without it the write is silently dropped.
+#[cfg(target_arch = "riscv32")]
+pub fn feed_timg1() {
+    // SAFETY: peripheral pointer is static; single-hart context (or the
+    // app must serialise feeds through a critical section if it has
+    // multi-hart code paths feeding this same WDT — that is not the
+    // typical setup).
+    unsafe {
+        let t1 = &*pac::TIMG1::PTR;
+        t1.wdtwprotect().write(|w| w.bits(WDT_KEY));
+        t1.wdtfeed().write(|w| w.wdt_feed().bits(1));
+        t1.wdtwprotect().write(|w| w.bits(0));
+    }
+}
+
+/// Disable TIMG1 main WDT. Use this once the app has stood up its own
+/// watchdog (e.g. embassy task watchdogs) or has called
+/// `mark_boot_succeeded` and no longer needs the early hang detector.
+/// Idempotent — disabling an already-disabled WDT is a no-op.
+#[cfg(target_arch = "riscv32")]
+pub fn disable_timg1() {
+    // SAFETY: same conditions as [`enable_timg1_reset`].
+    unsafe {
+        let t1 = &*pac::TIMG1::PTR;
+        t1.wdtwprotect().write(|w| w.bits(WDT_KEY));
+        t1.wdtconfig0().modify(|_, w| {
+            w.wdt_en()
+                .clear_bit()
+                .wdt_flashboot_mod_en()
+                .clear_bit()
+        });
+        t1.wdtwprotect().write(|w| w.bits(0));
+    }
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+pub fn enable_timg1_reset(_timeout_ms: u32) {}
+#[cfg(not(target_arch = "riscv32"))]
+pub fn feed_timg1() {}
+#[cfg(not(target_arch = "riscv32"))]
+pub fn disable_timg1() {}

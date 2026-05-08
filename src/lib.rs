@@ -43,6 +43,8 @@ pub mod pmu;
 #[cfg(target_arch = "riscv32")]
 pub mod clkrst;
 pub mod wdt;
+#[cfg(target_arch = "riscv32")]
+pub mod reset_cause;
 
 /// Phase-1 hardware bring-up — minimum to keep the chip alive: BOD off,
 /// WDT off, L2 cache mode set. Runs in a few microseconds.
